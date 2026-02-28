@@ -13,7 +13,17 @@ export function useSSEStream() {
         try { await readerRef.current.cancel(); } catch {}
       }
 
-      const resp = await fetch("/api/analyze", {
+      // We add a simulated "starting" event immediately so the UI reacts instantly
+      handleSSEEvent("status", {
+        step: "upload",
+        message: "Initiating connection to Reka Vision...",
+        progress: 1,
+      });
+
+      // Direct fetch to FastAPI to avoid Next.js proxy buffering
+      const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      
+      const resp = await fetch(`${backendUrl}/api/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -36,8 +46,8 @@ export function useSSEStream() {
 
           buffer += decoder.decode(value, { stream: true });
 
-          // Parse SSE events: split on double newline
-          const parts = buffer.split("\n\n");
+          // Parse SSE events: split on double newline (handles both \n\n and \r\n\r\n)
+          const parts = buffer.split(/\r?\n\r?\n/);
           buffer = parts.pop() || "";
 
           for (const part of parts) {
@@ -46,7 +56,7 @@ export function useSSEStream() {
             let eventType = "message";
             let eventData = "";
 
-            for (const line of part.split("\n")) {
+            for (const line of part.split(/\r?\n/)) {
               if (line.startsWith("event:")) {
                 eventType = line.slice(6).trim();
               } else if (line.startsWith("data:")) {
